@@ -8,17 +8,12 @@ from django.conf import settings
 
 class UserManager(BaseUserManager):
 
-    def create_user(self, email, first_name,last_name,phone_number,age,gender,password=None):
+    def create_user(self, email,password=None):
         if not email:
             raise ValueError('Users Must Have an email address')
 
         user = self.model(
-            email = self.normalize_email(email),
-            first_name = first_name,
-            last_name = last_name,
-            phone_number = phone_number,
-            age = age,
-            gender = gender,
+            email = self.normalize_email(email)
         )
         user.set_password(password)
         user.save(using=self._db)
@@ -29,7 +24,7 @@ class UserManager(BaseUserManager):
         if password is None:
             raise TypeError('Superusers must have a password.')
 
-        user = self.create_user(email,"Mohit","Verma","7019883428",30,"M", password)
+        user = self.create_user(email, password)
         user.is_superuser = True
         user.is_staff = True
         user.save()
@@ -80,7 +75,6 @@ class Image(models.Model):
 class Album(models.Model):
     title = models.CharField(max_length=255)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL,related_name='album_posted_by', blank=False,on_delete=models.CASCADE)
-    images = models.ManyToManyField(Image, related_name="imagesCollection")
     published_on = models.CharField(max_length=255)
 
     def __str__(self):

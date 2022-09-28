@@ -1,10 +1,9 @@
 from rest_framework import viewsets
 from core.models import Image, Album, Post_Image
 from . import serializers
-from rest_framework.authtoken.models import Token
 from django.contrib.auth.models import User
 from rest_framework.permissions import IsAuthenticated , AllowAny
-from .serializers import UserSerializer, UserRegistrationSerializer, UserLoginSerializer, ImagePostSerializer
+from .serializers import UserLoginSerializer, UserSerializer
 from rest_framework import status
 from rest_framework.generics import CreateAPIView
 from rest_framework.response import Response
@@ -18,18 +17,17 @@ from rest_framework import status
 from rest_framework.generics import RetrieveAPIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
-from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
-from rest_framework_jwt.settings import api_settings
-from django.views.generic.list import ListView
 from rest_framework.decorators import api_view
-
+from rest_framework_simplejwt import authentication
+from rest_framework_simplejwt.views import TokenObtainPairView
+from django.views.decorators.csrf import csrf_exempt
 User = get_user_model()
 
 class UserProfileView(RetrieveAPIView):
 
     permission_classes = (IsAuthenticated,)
-    authentication_class = JSONWebTokenAuthentication
+    authentication_class = authentication.JWTAuthentication()
     serializer_class = serializers.UserSerializer
 
     def get(self, request):
@@ -66,7 +64,7 @@ class UserProfileView(RetrieveAPIView):
         status_code = status.HTTP_201_CREATED
         return Response(serializer.data, status=status_code)
 
-
+@csrf_exempt
 class UserRegistrationView(CreateAPIView):
 
     serializer_class = serializers.UserRegistrationSerializer
@@ -86,7 +84,11 @@ class UserRegistrationView(CreateAPIView):
         return Response(response, status=status_code)
 
 
-class UserLoginView(RetrieveAPIView):
+@csrf_exempt
+class MyTokenObtainPairView(TokenObtainPairView):
+    serializer_class = UserLoginSerializer
+@csrf_exempt
+class UserLoginView(TokenObtainPairView):
     permission_classes = (AllowAny,)
     serializer_class = UserLoginSerializer
     queryset = User.objects.all()
@@ -94,14 +96,15 @@ class UserLoginView(RetrieveAPIView):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
         response = {
-            'token' : serializer.data['token'],
+            'a' : serializer.data['token'],
             }
         status_code = status.HTTP_200_OK
+        print("Signal Sent")
         return Response(response, status=status_code)
 
 class ImageViewSet(viewsets.ModelViewSet):
     permission_classes = (IsAuthenticated,)
-    authentication_class = JSONWebTokenAuthentication
+    authentication_class = authentication.JWTAuthentication
     serializer_class = serializers.ImageSerializer
     queryset = Image.objects.all()
     def get_queryset(self):
@@ -111,17 +114,19 @@ class ImageViewSet(viewsets.ModelViewSet):
 
 class ProfileFeed(viewsets.ModelViewSet):
     permission_classes = (IsAuthenticated,)
-    authentication_class = JSONWebTokenAuthentication
+    authentication_class = authentication.JWTAuthentication
     serializer_class = serializers.UserSerializer
     queryset = User.objects.all()
 
     @api_view(['GET'])
-    def feed(request):
-        return queryset.filter(request.user)
+    def feed(self,request):
+        queryset = self.queryset
+        query_set = queryset.filter(owner=self.request.user)
+        return query_set
 
 class AlbumViewSet(viewsets.ModelViewSet):
     permission_classes = (IsAuthenticated,)
-    authentication_class = JSONWebTokenAuthentication
+    authentication_class = authentication.JWTAuthentication
     serializer_class = serializers.AlbumSerializer
     queryset = Album.objects.all()
     def get_queryset(self):
@@ -131,6 +136,8 @@ class AlbumViewSet(viewsets.ModelViewSet):
 
 class ImagePostViewSet(viewsets.ModelViewSet):
     permission_classes = (IsAuthenticated,)
-    authentication_class = JSONWebTokenAuthentication
+    authentication_class = authentication.JWTAuthentication
     serializer_class = serializers.ImagePostSerializer
     queryset = Post_Image.objects.all()
+
+

@@ -1,6 +1,10 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ImageViewSet,AlbumViewSet,UserRegistrationView,UserProfileView, UserLoginView, ImagePostViewSet, ProfileFeed
+from .views import ImageViewSet,AlbumViewSet, UserLoginView,UserRegistrationView,UserProfileView, ImagePostViewSet, ProfileFeed
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
 
 
 router = DefaultRouter()
@@ -10,7 +14,8 @@ router.register('posts', ImagePostViewSet,basename="posts")
 router.register('feed', ProfileFeed,basename="feed")
 urlpatterns = [
     path('api/', include(router.urls)),
-    path('signup/', UserRegistrationView.as_view(),name="signup"),
-    path('profile/', UserProfileView.as_view(),name="profile"),
-    path('login/', UserLoginView.as_view(),name="login"),
+    path('api/signup/', UserRegistrationView,name="signup"),
+    path('api/profile/', UserProfileView,name="profile"),
+    path('api/token/access/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/refresh/',TokenRefreshView.as_view(), name='token_refresh'),
 ]

@@ -10,12 +10,21 @@ from rest_framework_jwt.settings import api_settings
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.conf import settings
-from . import views
-
-JWT_PAYLOAD_HANDLER = api_settings.JWT_PAYLOAD_HANDLER
-JWT_ENCODE_HANDLER = api_settings.JWT_ENCODE_HANDLER
 from django.contrib.auth import get_user_model
-User = get_user_model()
+from .import views
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.views import TokenObtainPairView
+
+# class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
+#     @classmethod
+#     def get_token(cls, user):
+#         token = super().get_token(user)
+
+#         # Add custom claims
+#         token['first_name'] = user.first_name
+
+#         return token
 
 class UserSerializer(serializers.ModelSerializer):
 
@@ -30,15 +39,14 @@ class ImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Image
         fields = (
-            'id', 'name', 'description', 'imagePath'
+            '__all__'
         )
         read_only_fields = ('id',)
 
 class AlbumSerializer(serializers.ModelSerializer):
-    images = ImageSerializer(many=True, read_only=True)
     class Meta:
         model = Album
-        fields = '__all__'
+        fields = ('title','published_on')
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
 
@@ -56,7 +64,7 @@ class UserLoginSerializer(serializers.Serializer):
     email = serializers.CharField(max_length=255)
     password = serializers.CharField(max_length=128, write_only=True)
     token = serializers.CharField(max_length=255, read_only=True)
-
+    
     def validate(self, data):
         email = data.get("email", None)
         password = data.get("password", None)
@@ -66,16 +74,13 @@ class UserLoginSerializer(serializers.Serializer):
                 'A user with this email and password is not found.'
             )
         try:
-            payload = JWT_PAYLOAD_HANDLER(user)
-            jwt_token = JWT_ENCODE_HANDLER(payload)
             update_last_login(None, user)
         except User.DoesNotExist:
             raise serializers.ValidationError(
                 'User with given email and password does not exists'
             )
         return {
-            'email':user.email,
-            'token': jwt_token
+            'access': self.token
         }
 
 class ImagePostSerializer(serializers.Serializer):
