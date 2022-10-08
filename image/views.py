@@ -3,7 +3,7 @@ from core.models import Image, Album, Post_Image
 from . import serializers
 from django.contrib.auth.models import User
 from rest_framework.permissions import IsAuthenticated , AllowAny
-from .serializers import UserLoginSerializer, UserSerializer
+from .serializers import UserLoginSerializer
 from rest_framework import status
 from rest_framework.generics import CreateAPIView
 from rest_framework.response import Response
@@ -12,7 +12,6 @@ from rest_framework import status
 from rest_framework.generics import RetrieveAPIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from rest_framework_jwt.authentication import JSONWebTokenAuthentication
 from rest_framework import status
 from rest_framework.generics import RetrieveAPIView
 from rest_framework.response import Response
@@ -65,7 +64,7 @@ class UserProfileView(RetrieveAPIView):
         return Response(serializer.data, status=status_code)
 
 @csrf_exempt
-class UserRegistrationView(CreateAPIView):
+class UserRegistrationViewSet(viewsets.GenericViewSet):
 
     serializer_class = serializers.UserRegistrationSerializer
     permission_classes = (AllowAny,)
