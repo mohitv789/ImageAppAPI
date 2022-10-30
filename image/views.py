@@ -1,110 +1,174 @@
+from django.http import HttpResponsePermanentRedirect
+from django.shortcuts import render
+from rest_framework import generics, status, views, permissions
+from core.models import Album, Image, Post_Image
+from .serializers import AlbumSerializer, ImagePostSerializer, ImageSerializer, RegisterSerializer, SetNewPasswordSerializer, ResetPasswordEmailRequestSerializer, EmailVerificationSerializer, LoginSerializer, LogoutSerializer, UserSerializer
+from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
+from core.models import User
+from .utils import Util
+from django.contrib.sites.shortcuts import get_current_site
+from django.urls import reverse
+import jwt
+from django.conf import settings
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+from .renderers import UserRenderer
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.utils.encoding import smart_str, force_str, smart_bytes, DjangoUnicodeDecodeError
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.contrib.sites.shortcuts import get_current_site
+from django.urls import reverse
+from .utils import Util
+import os
 from rest_framework import viewsets
-from core.models import Image, Album, Post_Image
-from . import serializers
-from django.contrib.auth.models import User
-from rest_framework.permissions import IsAuthenticated , AllowAny
-from .serializers import UserLoginSerializer
-from rest_framework import status
-from rest_framework.generics import CreateAPIView
-from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
-from rest_framework import status
-from rest_framework.generics import RetrieveAPIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
-from rest_framework.generics import RetrieveAPIView
-from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
-from django.contrib.auth import get_user_model
-from rest_framework.decorators import api_view
-from rest_framework_simplejwt import authentication
-from rest_framework_simplejwt.views import TokenObtainPairView
-from django.views.decorators.csrf import csrf_exempt
-User = get_user_model()
 
-class UserProfileView(RetrieveAPIView):
+class CustomRedirect(HttpResponsePermanentRedirect):
 
-    permission_classes = (IsAuthenticated,)
-    authentication_class = authentication.JWTAuthentication()
-    serializer_class = serializers.UserSerializer
+    allowed_schemes = [os.environ.get('APP_SCHEME'), 'http', 'https']
 
+class UserRegistrationViewSet(generics.GenericAPIView):
+    
+    permission_classes = (AllowAny,)
+    serializer_class = RegisterSerializer
+
+    renderer_classes = (UserRenderer,)
+    def post(self, request):
+        user = request.data
+        serializer = self.serializer_class(data=user)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        user_data = serializer.data
+        user = User.objects.get(email=user_data['email'])
+        token = RefreshToken.for_user(user).access_token
+        current_site = get_current_site(request).domain
+        relativeLink = reverse('email-verify')
+        absurl = 'http://'+current_site+relativeLink+"?token="+str(token)
+        email_body = 'Hi '+user.email + \
+            ' Use the link below to verify your email \n' + absurl
+        data = {'email_body': email_body, 'to_email': user.email,
+                'email_subject': 'Verify your email'}
+
+        Util.send_email(data)
+        return Response(user_data, status=status.HTTP_201_CREATED)
+
+
+class VerifyEmail(views.APIView):
+    serializer_class = EmailVerificationSerializer
+
+    token_param_config = openapi.Parameter(
+        'token', in_=openapi.IN_QUERY, description='Description', type=openapi.TYPE_STRING)
+
+    @swagger_auto_schema(manual_parameters=[token_param_config])
     def get(self, request):
+        token = request.GET.get('token')
         try:
-            status_code = status.HTTP_200_OK
-            response = {
-                'success': 'true',
-                'status code': status_code,
-                'message': 'User profile fetched successfully',
-                'data': [{
-                    'first_name': self.request.user.first_name,
-                    'last_name': self.request.user.last_name,
-                    'phone_number': self.request.user.phone_number,
-                    'age': self.request.user.age,
-                    'gender': self.request.user.gender,
-                    }]
-                }
+            payload = jwt.decode(token, settings.SECRET_KEY)
+            user = User.objects.get(id=payload['user_id'])
+            if not user.is_verified:
+                user.is_verified = True
+                user.save()
+            return Response({'email': 'Successfully activated'}, status=status.HTTP_200_OK)
+        except jwt.ExpiredSignatureError as identifier:
+            return Response({'error': 'Activation Expired'}, status=status.HTTP_400_BAD_REQUEST)
+        except jwt.exceptions.DecodeError as identifier:
+            return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
 
-        except Exception as e:
-            status_code = status.HTTP_400_BAD_REQUEST
-            response = {
-                'success': 'false',
-                'status code': status.HTTP_400_BAD_REQUEST,
-                'message': 'User does not exists',
-                'error': str(e)
-                }
-        return Response(response, status=status_code)
 
-    def post(self, request):
-        profile = User.objects.get(user=request.user)
-        serializer = self.serializer_class(data=profile)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        status_code = status.HTTP_201_CREATED
-        return Response(serializer.data, status=status_code)
-
-@csrf_exempt
-class UserRegistrationViewSet(viewsets.GenericViewSet):
-
-    serializer_class = serializers.UserRegistrationSerializer
+class LoginAPIView(generics.GenericAPIView):
+    serializer_class = LoginSerializer
     permission_classes = (AllowAny,)
-
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        status_code = status.HTTP_201_CREATED
-        response = {
-            'success' : 'True',
-            'status code' : status_code,
-            'message': 'User registered  successfully',
-            }
-
-        return Response(response, status=status_code)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-@csrf_exempt
-class MyTokenObtainPairView(TokenObtainPairView):
-    serializer_class = UserLoginSerializer
-@csrf_exempt
-class UserLoginView(TokenObtainPairView):
-    permission_classes = (AllowAny,)
-    serializer_class = UserLoginSerializer
-    queryset = User.objects.all()
+class RequestPasswordResetEmail(generics.GenericAPIView):
+    serializer_class = ResetPasswordEmailRequestSerializer
+
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
+
+        email = request.data.get('email', '')
+
+        if User.objects.filter(email=email).exists():
+            user = User.objects.get(email=email)
+            uidb64 = urlsafe_base64_encode(smart_bytes(user.id))
+            token = PasswordResetTokenGenerator().make_token(user)
+            current_site = get_current_site(
+                request=request).domain
+            relativeLink = reverse(
+                'password-reset-confirm', kwargs={'uidb64': uidb64, 'token': token})
+
+            redirect_url = request.data.get('redirect_url', '')
+            absurl = 'http://'+current_site + relativeLink
+            email_body = 'Hello, \n Use link below to reset your password  \n' + \
+                absurl+"?redirect_url="+redirect_url
+            data = {'email_body': email_body, 'to_email': user.email,
+                    'email_subject': 'Reset your passsword'}
+            Util.send_email(data)
+        return Response({'success': 'We have sent you a link to reset your password'}, status=status.HTTP_200_OK)
+
+
+class PasswordTokenCheckAPI(generics.GenericAPIView):
+    serializer_class = SetNewPasswordSerializer
+
+    def get(self, request, uidb64, token):
+
+        redirect_url = request.GET.get('redirect_url')
+
+        try:
+            id = smart_str(urlsafe_base64_decode(uidb64))
+            user = User.objects.get(id=id)
+
+            if not PasswordResetTokenGenerator().check_token(user, token):
+                if len(redirect_url) > 3:
+                    return CustomRedirect(redirect_url+'?token_valid=False')
+                else:
+                    return CustomRedirect(os.environ.get('FRONTEND_URL', '')+'?token_valid=False')
+
+            if redirect_url and len(redirect_url) > 3:
+                return CustomRedirect(redirect_url+'?token_valid=True&message=Credentials Valid&uidb64='+uidb64+'&token='+token)
+            else:
+                return CustomRedirect(os.environ.get('FRONTEND_URL', '')+'?token_valid=False')
+
+        except DjangoUnicodeDecodeError as identifier:
+            try:
+                if not PasswordResetTokenGenerator().check_token(user):
+                    return CustomRedirect(redirect_url+'?token_valid=False')
+                    
+            except UnboundLocalError as e:
+                return Response({'error': 'Token is not valid, please request a new one'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+class SetNewPasswordAPIView(generics.GenericAPIView):
+    serializer_class = SetNewPasswordSerializer
+
+    def patch(self, request):
+        serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
-        response = {
-            'a' : serializer.data['token'],
-            }
-        status_code = status.HTTP_200_OK
-        print("Signal Sent")
-        return Response(response, status=status_code)
+        return Response({'success': True, 'message': 'Password reset success'}, status=status.HTTP_200_OK)
+
+
+class LogoutAPIView(generics.GenericAPIView):
+    serializer_class = LogoutSerializer
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def post(self, request):
+
+        serializer = self.serializer_class(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 class ImageViewSet(viewsets.ModelViewSet):
-    permission_classes = (IsAuthenticated,)
-    authentication_class = authentication.JWTAuthentication
-    serializer_class = serializers.ImageSerializer
+    permission_classes = (permissions.IsAuthenticated,)
+    serializer_class = ImageSerializer
     queryset = Image.objects.all()
     def get_queryset(self):
         queryset = self.queryset
@@ -112,21 +176,14 @@ class ImageViewSet(viewsets.ModelViewSet):
         return query_set
 
 class ProfileFeed(viewsets.ModelViewSet):
-    permission_classes = (IsAuthenticated,)
-    authentication_class = authentication.JWTAuthentication
-    serializer_class = serializers.UserSerializer
+    permission_classes = (permissions.IsAuthenticated,)
+    serializer_class = UserSerializer
     queryset = User.objects.all()
 
-    @api_view(['GET'])
-    def feed(self,request):
-        queryset = self.queryset
-        query_set = queryset.filter(owner=self.request.user)
-        return query_set
 
 class AlbumViewSet(viewsets.ModelViewSet):
-    permission_classes = (IsAuthenticated,)
-    authentication_class = authentication.JWTAuthentication
-    serializer_class = serializers.AlbumSerializer
+    permission_classes = (permissions.IsAuthenticated,)
+    serializer_class = AlbumSerializer
     queryset = Album.objects.all()
     def get_queryset(self):
         queryset = self.queryset
@@ -134,9 +191,8 @@ class AlbumViewSet(viewsets.ModelViewSet):
         return query_set
 
 class ImagePostViewSet(viewsets.ModelViewSet):
-    permission_classes = (IsAuthenticated,)
-    authentication_class = authentication.JWTAuthentication
-    serializer_class = serializers.ImagePostSerializer
+    permission_classes = (permissions.IsAuthenticated,)
+    serializer_class = ImagePostSerializer
     queryset = Post_Image.objects.all()
 
 

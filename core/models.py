@@ -5,6 +5,8 @@ from django.contrib.auth.models import BaseUserManager, AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
 from django.template.defaultfilters import slugify
 from django.conf import settings
+from rest_framework_simplejwt.tokens import RefreshToken
+
 
 class UserManager(BaseUserManager):
 
@@ -31,6 +33,10 @@ class UserManager(BaseUserManager):
         return user
 
 
+AUTH_PROVIDERS = {'facebook': 'facebook', 'google': 'google',
+                  'twitter': 'twitter', 'email': 'email'}
+
+
 class User(AbstractBaseUser,PermissionsMixin):
     slug = models.CharField(max_length=100, unique=True)
     GENDER_CHOICES = (
@@ -42,14 +48,15 @@ class User(AbstractBaseUser,PermissionsMixin):
         max_length=255,
         unique=True
         )
-    first_name = models.CharField(max_length=50, unique=False)
-    last_name = models.CharField(max_length=50, unique=False)
-    phone_number = models.CharField(max_length=15, unique=True)
-    age = models.PositiveIntegerField()
-    gender = models.CharField(max_length=1, choices=GENDER_CHOICES)
+    is_verified = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    auth_provider = models.CharField(
+    max_length=255, blank=False,
+    null=False, default=AUTH_PROVIDERS.get('email'))
     USERNAME_FIELD = 'email'
     objects = UserManager()
 
@@ -61,6 +68,12 @@ class User(AbstractBaseUser,PermissionsMixin):
         slug_str = "%s" % (email_str)
         self.slug = slugify(slug_str)
         super(User, self).save(*args, **kwargs)
+    def tokens(self):
+        refresh = RefreshToken.for_user(self)
+        return {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token)
+        }
         
 
 class Image(models.Model):
